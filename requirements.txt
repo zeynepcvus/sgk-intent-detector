@@ -1,0 +1,10 @@
+pandas
+openpyxl
+scikit-learn
+matplotlib
+seaborn
+transformers
+torch
+gradio
+numpy
+streamlit
