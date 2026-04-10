@@ -46,32 +46,7 @@
   especially on semantically similar intent pairs.
 
   ---
-
-  ## Project Structure
-
-  sgk-intent-detector/
-  ├── data/
-  │   └── sgk_dataset_improved_v4.xlsx   # Final labeled dataset (873 rows)
-  ├── models/
-  │   ├── baseline_model.pkl             # Trained TF-IDF + LR model
-  │   ├── berturk_best.pt                # Best BERTurk checkpoint
-  │   ├── tfidf_vectorizer.pkl
-  │   ├── label2id.pkl
-  │   └── id2label.pkl
-  ├── outputs/
-  │   ├── evaluation_summary.json        # Accuracy & F1 scores
-  │   ├── baseline_confusion_matrix.png
-  │   └── berturk_confusion_matrix.png
-  ├── scripts/
-  │   └── evaluate_models.py
-  ├── 00_preprocess.py                   # Data cleaning & preprocessing
-  ├── 01_baseline.py                     # TF-IDF + Logistic Regression
-  ├── 02_berturk.py                      # BERTurk fine-tuning
-  ├── 03_app.py                          # Streamlit demo app
-  └── requirements.txt
-
-  ---
-
+  
   ## Setup
 
   **1. Clone the repository and create a virtual environment:**
