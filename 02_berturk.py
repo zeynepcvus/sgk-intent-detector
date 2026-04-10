@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 import torch
 import random
@@ -76,18 +77,24 @@ class SGKDataset(Dataset):
         }
 
 # --- dataset ve dataloader oluştur ---
+# BERTurk cased model: orijinal text kullan (text_bert), text_clean DEĞİL.
+# Lowercase + punctuation removal cased BERT için bilgi kaybına yol açar.
+# text_bert = sadece strip() uygulanmış, büyük/küçük harf ve noktalama korunmuş.
+BERT_TEXT_COL = "text_bert" if "text_bert" in train_df.columns else "text_clean"
+print(f"BERT input column: '{BERT_TEXT_COL}'")
+
 train_dataset = SGKDataset(
-    train_df["text_clean"].tolist(),
+    train_df[BERT_TEXT_COL].tolist(),
     [label2id[i] for i in train_df["intent"].tolist()],
     tokenizer
 )
 val_dataset = SGKDataset(
-    val_df["text_clean"].tolist(),
+    val_df[BERT_TEXT_COL].tolist(),
     [label2id[i] for i in val_df["intent"].tolist()],
     tokenizer
 )
 test_dataset = SGKDataset(
-    test_df["text_clean"].tolist(),
+    test_df[BERT_TEXT_COL].tolist(),
     [label2id[i] for i in test_df["intent"].tolist()],
     tokenizer
 )
@@ -106,9 +113,10 @@ model = AutoModelForSequenceClassification.from_pretrained(
 model.to(device)
 
 # --- optimizer ve scheduler ---
-optimizer   = AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
-num_epochs  = 7
-total_steps = len(train_loader) * num_epochs
+optimizer       = AdamW(model.parameters(), lr=2e-5, weight_decay=0.01)
+num_epochs      = 10        # maksimum epoch — early stopping devreye girebilir
+EARLY_STOP_PAT  = 3         # val F1 iyileşmezse kaç epoch bekle
+total_steps     = len(train_loader) * num_epochs
 
 # öğrenme hızını yavaş yavaş düşüren scheduler
 scheduler = get_linear_schedule_with_warmup(
@@ -191,10 +199,12 @@ def evaluate(model, loader, device):
 print("\nTraining started...")
 print("-" * 50)
 
-best_val_f1  = 0
-train_losses = []
-val_losses   = []
-val_f1s      = []
+best_val_f1    = 0
+no_improve     = 0      # early stopping sayacı
+train_losses   = []
+val_losses     = []
+val_f1s        = []
+best_epoch     = 0
 
 for epoch in range(num_epochs):
     # eğit
@@ -216,8 +226,17 @@ for epoch in range(num_epochs):
     # en iyi f1 veren modeli kaydet
     if val_f1 > best_val_f1:
         best_val_f1 = val_f1
+        best_epoch  = epoch + 1
+        no_improve  = 0
         torch.save(model.state_dict(), "models/berturk_best.pt")
         print(f"  --> Best model saved (val f1: {val_f1:.4f})")
+    else:
+        no_improve += 1
+        if no_improve >= EARLY_STOP_PAT:
+            print(f"\nEarly stopping at epoch {epoch+1} (no improvement for {EARLY_STOP_PAT} epochs)")
+            break
+
+print(f"\nBest epoch: {best_epoch} | Best val F1: {best_val_f1:.4f}")
 
 # --- en iyi modeli yükle ve test et ---
 print("\nLoading best model for test evaluation...")
@@ -230,12 +249,62 @@ test_f1  = f1_score(test_labels, test_preds, average="macro", zero_division=0)
 print(f"\nTest Accuracy : {test_acc:.4f}")
 print(f"Test Macro F1 : {test_f1:.4f}")
 print("\nClassification Report:")
-print(classification_report(
+report_str = classification_report(
     test_labels,
     test_preds,
     target_names=labels,
     zero_division=0
-))
+)
+print(report_str)
+
+# --- evaluation sonuçlarını JSON olarak kaydet ---
+report_dict = classification_report(
+    test_labels,
+    test_preds,
+    target_names=labels,
+    output_dict=True,
+    zero_division=0
+)
+
+# karışan sınıf çiftlerini tespit et (hata analizi için)
+from collections import defaultdict
+confusion_pairs = defaultdict(int)
+for true, pred in zip(
+    [labels[i] for i in test_labels],
+    [labels[i] for i in test_preds]
+):
+    if true != pred:
+        confusion_pairs[f"{true} → {pred}"] += 1
+top_confusions = sorted(confusion_pairs.items(), key=lambda x: x[1], reverse=True)[:10]
+
+eval_summary = {
+    "model": "berturk",
+    "model_name": "dbmdz/bert-base-turkish-cased",
+    "bert_input": BERT_TEXT_COL,
+    "best_epoch": best_epoch,
+    "num_intents": num_labels,
+    "test_accuracy": round(test_acc, 4),
+    "test_macro_f1": round(test_f1, 4),
+    "per_class_f1": {
+        label: round(report_dict[label]["f1-score"], 4)
+        for label in labels
+    },
+    "top_confusions": top_confusions,
+}
+
+os.makedirs("outputs", exist_ok=True)
+
+# Eğer baseline summary varsa onu da dahil et
+summary_path = "outputs/evaluation_summary.json"
+combined = {}
+if os.path.exists(summary_path):
+    with open(summary_path) as f:
+        combined = json.load(f)
+combined["berturk"] = eval_summary
+
+with open(summary_path, "w", encoding="utf-8") as f:
+    json.dump(combined, f, ensure_ascii=False, indent=2)
+print(f"\nEvaluation summary saved: {summary_path}")
 
 # --- confusion matrix ---
 os.makedirs("outputs", exist_ok=True)

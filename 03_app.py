@@ -1,3 +1,5 @@
+import json
+import os
 import re
 import pickle
 from typing import Dict, List, Tuple
@@ -6,6 +8,17 @@ import numpy as np
 import streamlit as st
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+
+def _load_eval_metrics() -> Dict:
+    """evaluation_summary.json varsa gerçek metrikleri döndürür, yoksa None."""
+    path = "outputs/evaluation_summary.json"
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+_EVAL = _load_eval_metrics()
 
 st.set_page_config(
     page_title="SGK Akıllı Niyet Tespit Sistemi",
@@ -94,6 +107,15 @@ INTENT_META: Dict[str, Dict[str, str]] = {
         "link": "https://www.turkiye.gov.tr/sosyal-guvenlik-ve-sigorta-hizmetleri",
         "icon": "ℹ️",
     },
+    # out_of_scope: model bu sınıfı tanıyorsa link gösterilmez
+    "out_of_scope": {
+        "title": "SGK Kapsamı Dışı",
+        "description": "Bu sorgu SGK işlemleriyle ilgili görünmüyor.",
+        "action": "Lütfen SGK ile ilgili bir soru sorun.",
+        "link_label": "",
+        "link": "",
+        "icon": "🚫",
+    },
 }
 
 EXAMPLE_QUERIES: List[Tuple[str, str]] = [
@@ -155,8 +177,10 @@ def load_models():
 
 
 def predict_bert(text, tokenizer, model, id2label):
-    cleaned = clean_text(text)
-    inputs = tokenizer(cleaned, return_tensors="pt", max_length=128, padding="max_length", truncation=True)
+    # BERTurk cased model: orijinal metni kullan, agresif temizleme yapma.
+    # Sadece baş/son boşluğu temizle; büyük/küçük harf ve noktalama korunur.
+    bert_input = text.strip()
+    inputs = tokenizer(bert_input, return_tensors="pt", max_length=128, padding="max_length", truncation=True)
     with torch.no_grad():
         outputs = model(**inputs)
     probs = torch.softmax(outputs.logits, dim=1).squeeze().numpy()
@@ -176,6 +200,22 @@ def conf_label(conf):
     elif conf >= 0.70: return "Yüksek Güven"
     elif conf >= 0.50: return "Orta Güven"
     else: return "Düşük Güven"
+
+
+def _metric_pct(model_key: str, metric: str) -> str:
+    """evaluation_summary.json'dan metrik oku; yoksa '—' döndür."""
+    val = _EVAL.get(model_key, {}).get(metric)
+    if val is None:
+        return "—"
+    return f"%{round(val * 100, 1)}"
+
+
+def _metric_f1(model_key: str) -> str:
+    """F1 skorunu 2 ondalıklı string olarak döndür."""
+    val = _EVAL.get(model_key, {}).get("test_macro_f1")
+    if val is None:
+        return "—"
+    return f"{val:.2f}"
 
 
 # --- YENİ: domain kontrolü ve prediction status ---
@@ -403,7 +443,8 @@ if predict_clicked and (user_input or "").strip():
     # --- YENİ: status kontrolü ---
     status = get_prediction_status(user_input, top_conf, all_results)
 
-    if status == "out_of_domain":
+    # Model out_of_scope tahmin ettiyse veya domain dışıysa link gösterme
+    if top_intent == "out_of_scope" or status == "out_of_domain":
         st.markdown("""
         <div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:14px;padding:20px 24px;margin-top:16px;display:flex;align-items:flex-start;gap:14px;">
           <span style="font-size:28px;">🚫</span>
@@ -500,15 +541,15 @@ if predict_clicked and (user_input or "").strip():
             tfidf_icon = "✓" if tfidf_correct else "✗"
             st.markdown(f"""
         <div class="bcard">
-          <div class="bcard-title">⚖️ Model karşılaştırması</div>
+          <div class="bcard-title">⚖️ Genel model karşılaştırması</div>
           <div class="cmp-row cmp-bert-row">
             <div class="cmp-left">
               <span class="cmp-name cmp-bert-name">🔵 BERTurk Fine-tuned</span>
               <span class="pred-correct">✓ {top_intent}</span>
             </div>
             <div class="cmp-right">
-              <div class="cmp-stat"><div class="cmp-val cmp-bert-val">%90.7</div><div class="cmp-lbl">Accuracy</div></div>
-              <div class="cmp-stat"><div class="cmp-val cmp-bert-val">0.90</div><div class="cmp-lbl">F1</div></div>
+              <div class="cmp-stat"><div class="cmp-val cmp-bert-val">{_metric_pct("berturk", "test_accuracy")}</div><div class="cmp-lbl">Accuracy</div></div>
+              <div class="cmp-stat"><div class="cmp-val cmp-bert-val">{_metric_f1("berturk")}</div><div class="cmp-lbl">F1</div></div>
             </div>
           </div>
           <div class="cmp-row cmp-tfidf-row">
@@ -517,8 +558,8 @@ if predict_clicked and (user_input or "").strip():
               <span class="{tfidf_css}">{tfidf_icon} {baseline_pred}</span>
             </div>
             <div class="cmp-right">
-              <div class="cmp-stat"><div class="cmp-val cmp-tfidf-val">%81.5</div><div class="cmp-lbl">Accuracy</div></div>
-              <div class="cmp-stat"><div class="cmp-val cmp-tfidf-val">0.81</div><div class="cmp-lbl">F1</div></div>
+              <div class="cmp-stat"><div class="cmp-val cmp-tfidf-val">{_metric_pct("baseline", "test_accuracy")}</div><div class="cmp-lbl">Accuracy</div></div>
+              <div class="cmp-stat"><div class="cmp-val cmp-tfidf-val">{_metric_f1("baseline")}</div><div class="cmp-lbl">F1</div></div>
             </div>
           </div>
         </div>""", unsafe_allow_html=True)
@@ -554,4 +595,4 @@ with s3:
     </div>""", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-st.markdown('<div class="app-footer">© 2024 SGK Akıllı Niyet Tespit Sistemi • BERTurk ile Güçlendirilmiştir</div>', unsafe_allow_html=True)
+st.markdown('<div class="app-footer">© 2026 SGK Akıllı Niyet Tespit Sistemi • BERTurk ile Güçlendirilmiştir</div>', unsafe_allow_html=True)

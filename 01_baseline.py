@@ -1,7 +1,8 @@
+import json
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, f1_score
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pickle
@@ -60,8 +61,48 @@ test_preds = model.predict(X_test_tfidf)
 test_acc   = accuracy_score(y_test, test_preds)
 print(f"Test Accuracy: {test_acc:.4f}")
 
+test_f1 = f1_score(y_test, test_preds, average="macro", zero_division=0)
+print(f"Test Macro F1: {test_f1:.4f}")
+
 print("\nClassification Report:")
-print(classification_report(y_test, test_preds))
+report_str = classification_report(y_test, test_preds, zero_division=0)
+print(report_str)
+
+# --- evaluation sonuçlarını JSON olarak kaydet ---
+report_dict = classification_report(y_test, test_preds, output_dict=True, zero_division=0)
+labels_sorted = sorted(df["intent"].unique())
+
+from collections import defaultdict
+confusion_pairs = defaultdict(int)
+for true, pred in zip(y_test, test_preds):
+    if true != pred:
+        confusion_pairs[f"{true} → {pred}"] += 1
+top_confusions = sorted(confusion_pairs.items(), key=lambda x: x[1], reverse=True)[:10]
+
+eval_summary = {
+    "model": "baseline",
+    "model_name": "TF-IDF + Logistic Regression",
+    "num_intents": len(labels_sorted),
+    "test_accuracy": round(test_acc, 4),
+    "test_macro_f1": round(test_f1, 4),
+    "per_class_f1": {
+        label: round(report_dict[label]["f1-score"], 4)
+        for label in labels_sorted if label in report_dict
+    },
+    "top_confusions": top_confusions,
+}
+
+os.makedirs("outputs", exist_ok=True)
+summary_path = "outputs/evaluation_summary.json"
+combined = {}
+if os.path.exists(summary_path):
+    with open(summary_path) as f:
+        combined = json.load(f)
+combined["baseline"] = eval_summary
+
+with open(summary_path, "w", encoding="utf-8") as f:
+    json.dump(combined, f, ensure_ascii=False, indent=2)
+print(f"Evaluation summary saved: {summary_path}")
 
 # --- confusion matrix kaydet ---
 os.makedirs("outputs", exist_ok=True)

@@ -1,0 +1,112 @@
+{
+  "baseline": {
+    "model": "baseline",
+    "model_name": "TF-IDF + Logistic Regression",
+    "num_intents": 11,
+    "test_accuracy": 0.7965,
+    "test_macro_f1": 0.7383,
+    "per_class_f1": {
+      "employment_status_query": 0.6667,
+      "general_info_query": 0.7778,
+      "health_coverage_query": 0.8148,
+      "insurance_status_query": 0.6364,
+      "out_of_scope": 0.0,
+      "premium_days_query": 0.9565,
+      "premium_payment_query": 0.8462,
+      "registration_document_query": 0.8571,
+      "retirement_query": 0.9091,
+      "service_record_query": 0.8,
+      "sgk_debt_query": 0.8571
+    },
+    "top_confusions": [
+      [
+        "employment_status_query â†’ insurance_status_query",
+        4
+      ],
+      [
+        "insurance_status_query â†’ employment_status_query",
+        3
+      ],
+      [
+        "general_info_query â†’ health_coverage_query",
+        2
+      ],
+      [
+        "out_of_scope â†’ service_record_query",
+        2
+      ],
+      [
+        "general_info_query â†’ retirement_query",
+        1
+      ],
+      [
+        "general_info_query â†’ premium_payment_query",
+        1
+      ],
+      [
+        "health_coverage_query â†’ insurance_status_query",
+        1
+      ],
+      [
+        "retirement_query â†’ health_coverage_query",
+        1
+      ],
+      [
+        "service_record_query â†’ premium_payment_query",
+        1
+      ],
+      [
+        "sgk_debt_query â†’ premium_payment_query",
+        1
+      ]
+    ]
+  },
+  "berturk": {
+    "model": "berturk",
+    "model_name": "dbmdz/bert-base-turkish-cased",
+    "bert_input": "text_bert",
+    "best_epoch": 8,
+    "num_intents": 11,
+    "test_accuracy": 0.9204,
+    "test_macro_f1": 0.9095,
+    "per_class_f1": {
+      "employment_status_query": 0.7273,
+      "general_info_query": 1.0,
+      "health_coverage_query": 1.0,
+      "insurance_status_query": 0.7619,
+      "out_of_scope": 0.75,
+      "premium_days_query": 0.9524,
+      "premium_payment_query": 0.9565,
+      "registration_document_query": 0.9524,
+      "retirement_query": 1.0,
+      "service_record_query": 0.9474,
+      "sgk_debt_query": 0.9565
+    },
+    "top_confusions": [
+      [
+        "employment_status_query → insurance_status_query",
+        3
+      ],
+      [
+        "insurance_status_query → employment_status_query",
+        2
+      ],
+      [
+        "premium_days_query → employment_status_query",
+        1
+      ],
+      [
+        "registration_document_query → service_record_query",
+        1
+      ],
+      [
+        "out_of_scope → sgk_debt_query",
+        1
+      ],
+      [
+        "out_of_scope → premium_payment_query",
+        1
+      ]
+    ]
+  }
+}
